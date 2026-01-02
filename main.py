@@ -42,10 +42,28 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # --- CONFIGURATION ---
-# !!! REPLACE WITH YOUR ACTUAL BOT TOKEN !!!
-BOT_TOKEN = "8469831503:AAF836wuP95AFMYCoMhtUulwRGkB2xKWiDE"
-# !!! REPLACE WITH YOUR NUMERIC TELEGRAM USER ID !!!
-OWNER_ID = 8136234200,6211784722
+#
+# Security note:
+# - Never hardcode secrets (like Telegram bot tokens) in source control.
+# - Set `BOT_TOKEN` and `OWNER_IDS` via environment variables.
+#
+# Required: Telegram bot token
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise RuntimeError(
+        "Missing BOT_TOKEN. Set it as an environment variable, e.g. "
+        "`export BOT_TOKEN='123:ABC...'`"
+    )
+
+# Optional: comma-separated list of numeric Telegram user IDs who can administer the bot
+# Example: export OWNER_IDS="123456789,987654321"
+_owner_ids_env = os.environ.get("OWNER_IDS", "").strip()
+OWNER_IDS: set[int] = set()
+if _owner_ids_env:
+    try:
+        OWNER_IDS = {int(x.strip()) for x in _owner_ids_env.split(",") if x.strip()}
+    except ValueError as e:
+        raise RuntimeError("Invalid OWNER_IDS; must be comma-separated integers.") from e
 
 # --- Premium User Management ---
 PREMIUM_USERS_FILE = "premium_users.txt"
@@ -123,7 +141,7 @@ class ReportForm(StatesGroup):
 # --- Helper Functions ---
 def is_allowed_user(user: User) -> bool:
     """Checks if the user is the owner or a premium user."""
-    return user.id == OWNER_ID or user.id in premium_users
+    return user.id in OWNER_IDS or user.id in premium_users
 
 async def delete_message_safely(message: types.Message):
     """Attempts to delete a message, ignoring common safe errors."""
@@ -477,18 +495,14 @@ async def cmd_start(message: types.Message, state: FSMContext):
     start_keyboard.add(KeyboardButton("❓ Help"))
     start_keyboard.add(KeyboardButton("🚫 Cancel Task")) # Add explicit cancel button
 
-    start_msg = f"""⚡️ Welcome {message.from_user.first_name} to 𝕸𝖆𝖎𝖑 𝕱𝖚𝖈𝖐*𝖗 ⚡️
-ᴛʜᴇ ᴜʟᴛɪᴍᴀᴛᴇ ꜱᴘᴀᴍ ᴘʟᴀʏɢʀᴏᴜɴᴅ ꜰᴏʀ ꜱᴀᴠᴀɢᴇ ꜱᴇɴᴅᴇʀꜱ.
-𝗙𝗢𝗥𝗚𝗘𝗧 𝗥𝗨𝗟𝗘𝗦. 𝗙𝗘𝗔𝗥 𝗡𝗢 𝗙𝗜𝗟𝗧𝗘𝗥𝗦.
+    start_msg = f"""⚡️ Welcome {message.from_user.first_name} ⚡️
+This bot is for **authorized, consent-based** email sending only.
 
 ━━━━━━━━━━━━━
-🔥 𝘽𝙤𝙩 𝘼𝙧𝙨𝙚𝙣𝙖𝙡:
-• 𝙎𝙈𝘼𝙎𝙃 𝙄𝙉𝘽𝙊𝙓𝙀𝙎 𝙬𝙞𝙩𝙝 𝙃𝙞𝙜𝙝-𝙑𝙤𝙡𝙪𝙢𝙚 𝘽𝙡𝙖𝙨𝙩𝙨
-• Use 𝗠𝗨𝗟𝗧𝗜𝗣𝗟𝗘 sender accounts per run!
-• Built-in 𝗗𝗘𝗟𝗔𝗬 system to manage sending rate.
-• ⏹️ **STOP** sending midway if needed!
-• 𝘽𝙮𝙥𝙖𝙨𝙨 𝘿𝙚𝙩𝙚𝙘𝙩𝙞𝙤𝙣 𝙡𝙞𝙠𝙚 𝙖 𝙂𝙝𝙤𝙨𝙩 (maybe 😉)
-• 𝙁𝙖𝙨𝙩. 𝙁𝙚𝙖𝙧𝙡𝙚𝙨𝙨. 𝙁𝙞𝙡𝙩𝙚𝙧-𝙋𝙧𝙤𝙤𝙛 (use responsibly!).
+🔥 Features:
+• Multiple sender accounts per run
+• Built-in delay system to manage sending rate
+• ⏹️ Stop sending midway if needed
 
 ━━━━━━━━━━━━━
 ⚙️ 𝙃𝙤𝙬 𝙩𝙤 𝙐𝙨𝙚 𝙏𝙝𝙚 𝘽𝙀𝘼𝙎𝙏:
@@ -498,8 +512,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
 📌 Use the '⏹️ Stop Sending' button during the process if needed.
 
 ━━━━━━━━━━━━━
-Stay Ruthless. Stay Untouchable.
-Bot by @useipad (Modified)
+Please use responsibly and comply with laws + provider terms.
 """
     await message.reply(start_msg, reply_markup=start_keyboard)
 
@@ -571,7 +584,7 @@ async def cmd_help(message: types.Message, state: FSMContext):
         "   ┗ Appears while emails are being sent. Click to abort the sending process."
     )
 
-    if user_id == OWNER_ID:
+    if user_id in OWNER_IDS:
         help_text += (
             "\n<b>👑 OWNER COMMANDS:</b>\n"
             "🔑 <code>/addpremium [user_id]</code>\n"
@@ -636,7 +649,7 @@ async def cmd_cancel_setup(message: types.Message, state: FSMContext):
 
 # --- Owner Commands ---
 # ... (addpremium, removepremium, listpremium handlers remain the same) ...
-@dp.message_handler(Command("addpremium"), user_id=OWNER_ID, state="*")
+@dp.message_handler(Command("addpremium"), user_id=list(OWNER_IDS), state="*")
 async def cmd_add_premium(message: types.Message):
     """Owner command to grant premium access to a user."""
     args = message.get_args().split()
@@ -654,7 +667,7 @@ async def cmd_add_premium(message: types.Message):
         await message.reply("⚠️ Invalid User ID. Please provide a numeric Telegram User ID.", parse_mode="HTML")
         return
 
-    if user_id_to_add == OWNER_ID:
+    if user_id_to_add in OWNER_IDS:
         await message.reply("👑 You are the owner, you already have full access.", parse_mode="HTML")
         return
     if user_id_to_add <= 0:
@@ -686,7 +699,7 @@ async def cmd_add_premium(message: types.Message):
             log.warning(f"Could not notify user {user_id_to_add} about premium grant: {e}")
             await message.reply(f"(Note: Failed to notify user {user_id_to_add} due to an error: {e})", parse_mode="HTML", disable_web_page_preview=True)
 
-@dp.message_handler(Command("removepremium"), user_id=OWNER_ID, state="*")
+@dp.message_handler(Command("removepremium"), user_id=list(OWNER_IDS), state="*")
 async def cmd_remove_premium(message: types.Message):
     """Owner command to revoke premium access."""
     args = message.get_args().split()
@@ -704,7 +717,7 @@ async def cmd_remove_premium(message: types.Message):
         await message.reply("⚠️ Invalid User ID. Please provide a numeric Telegram User ID.", parse_mode="HTML")
         return
 
-    if user_id_to_remove == OWNER_ID:
+    if user_id_to_remove in OWNER_IDS:
         await message.reply("⛔️ Cannot remove the owner's implicit access.", parse_mode="HTML")
         return
     if user_id_to_remove <= 0:
@@ -736,7 +749,7 @@ async def cmd_remove_premium(message: types.Message):
     else:
         await message.reply(f"⚠️ User <code>{user_id_to_remove}</code> does not currently have premium access.", parse_mode="HTML")
 
-@dp.message_handler(Command("listpremium"), user_id=OWNER_ID, state="*")
+@dp.message_handler(Command("listpremium"), user_id=list(OWNER_IDS), state="*")
 async def cmd_list_premium(message: types.Message):
     """Owner command to list all premium users."""
     if not premium_users:
@@ -1211,7 +1224,7 @@ if __name__ == '__main__':
     log.info("Bot starting...")
     # Load premium users from file on startup
     load_premium_users()
-    log.info(f"Owner ID set to: {OWNER_ID}")
+    log.info(f"Owner IDs set to: {sorted(OWNER_IDS) if OWNER_IDS else 'None (set OWNER_IDS env var)'}")
     log.info(f"Premium users loaded: {premium_users if premium_users else 'None'}")
     log.info(f"Max emails per run: {MAX_EMAILS_PER_RUN}, Max sender accounts: {MAX_SENDER_ACCOUNTS}, Delay: {INTER_EMAIL_DELAY_SECONDS}s")
 
